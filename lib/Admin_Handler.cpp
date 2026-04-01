@@ -2195,9 +2195,20 @@ bool admin_handler_command_load_or_save(char *query_no_space, unsigned int query
 		} else {
 			if (is_admin_command_or_alias(LOAD_MYSQL_SERVERS_FROM_MEMORY, query_no_space, query_no_space_length)) {
 				ProxySQL_Admin* SPA = (ProxySQL_Admin*)pa;
-				SPA->mysql_servers_wrlock();
+				if (!sess->servers_table_locked) {
+#ifdef PA_PTHREAD_MUTEX
+					if (!SPA->mysql_servers_trywrlock()) {
+						SPA->send_error_msg_to_client(sess, (char*)"mysql_servers has been locked by another session");
+						return false;
+					}
+#else
+					SPA->mysql_servers_wrlock();
+#endif
+				}
 				SPA->load_mysql_servers_to_runtime();
-				SPA->mysql_servers_wrunlock();
+				if (!sess->servers_table_locked) {
+					SPA->mysql_servers_wrunlock();
+				}
 				proxy_debug(PROXY_DEBUG_ADMIN, 4, "Loaded mysql servers to RUNTIME\n");
 				SPA->send_ok_msg_to_client(sess, NULL, 0, query_no_space);
 				return false;
@@ -2265,9 +2276,20 @@ bool admin_handler_command_load_or_save(char *query_no_space, unsigned int query
 		} else {
 			if (is_admin_command_or_alias(SAVE_MYSQL_SERVERS_TO_MEMORY, query_no_space, query_no_space_length)) {
 				ProxySQL_Admin* SPA = (ProxySQL_Admin*)pa;
-				SPA->mysql_servers_wrlock();
+				if (!sess->servers_table_locked) {
+#ifdef PA_PTHREAD_MUTEX
+					if (!SPA->mysql_servers_trywrlock()) {
+						SPA->send_error_msg_to_client(sess, (char*)"mysql_servers has been locked by another session");
+						return false;
+					}
+#else
+					SPA->mysql_servers_wrlock();
+#endif
+				}
 				SPA->save_mysql_servers_runtime_to_database(false);
-				SPA->mysql_servers_wrunlock();
+				if (!sess->servers_table_locked) {
+					SPA->mysql_servers_wrunlock();
+				}
 				proxy_debug(PROXY_DEBUG_ADMIN, 4, "Saved mysql servers from RUNTIME\n");
 				SPA->send_ok_msg_to_client(sess, NULL, 0, query_no_space);
 				return false;
@@ -3693,7 +3715,7 @@ void admin_session_handler(S* sess, void *_pa, PtrSize_t *pkt) {
 	}
 	{
 		ProxySQL_Admin *SPA=(ProxySQL_Admin *)pa;
-		needs_vacuum = SPA->GenericRefreshStatistics(query_no_space,query_no_space_length, ( sess->session_type == PROXYSQL_SESSION_ADMIN ? true : false )  );
+		needs_vacuum = SPA->GenericRefreshStatistics(query_no_space,query_no_space_length, ( sess->session_type == PROXYSQL_SESSION_ADMIN ? true : false ), sess->servers_table_locked );
 	}
 
 
@@ -3814,6 +3836,39 @@ void admin_session_handler(S* sess, void *_pa, PtrSize_t *pkt) {
 		if ((query_no_space_length>5) && ( (!strncasecmp("SAVE ", query_no_space, 5)) || (!strncasecmp("LOAD ", query_no_space, 5))) ) {
 			proxy_debug(PROXY_DEBUG_ADMIN, 4, "Received LOAD or SAVE command\n");
 			run_query=admin_handler_command_load_or_save(query_no_space, query_no_space_length, sess, pa, &query, &query_length);
+			goto __run_query;
+		}
+
+		if ((query_no_space_length == strlen("LOCK MYSQL SERVERS")) && (!strncasecmp("LOCK MYSQL SERVERS", query_no_space, strlen("LOCK MYSQL SERVERS")))) {
+			if (sess->servers_table_locked) {
+				pa->send_error_msg_to_client(sess, (char*)"You are already holding the lock");
+				run_query = false;
+				goto __run_query;
+			}
+#ifdef PA_PTHREAD_MUTEX
+			if (!pa->mysql_servers_trywrlock()) {
+				pa->send_error_msg_to_client(sess, (char*)"mysql_servers has been locked by another session");
+				run_query = false;
+				goto __run_query;
+			}
+#else
+			pa->mysql_servers_wrlock();
+#endif
+			sess->servers_table_locked = true;
+			pa->send_ok_msg_to_client(sess, NULL, 0, query_no_space);
+			run_query = false;
+			goto __run_query;
+		}
+		if ((query_no_space_length == strlen("UNLOCK MYSQL SERVERS")) && (!strncasecmp("UNLOCK MYSQL SERVERS", query_no_space, strlen("UNLOCK MYSQL SERVERS")))) {
+			if (!sess->servers_table_locked) {
+				pa->send_error_msg_to_client(sess, (char*)"You do not own the lock");
+				run_query = false;
+				goto __run_query;
+			}
+			pa->mysql_servers_wrunlock();
+			sess->servers_table_locked = false;
+			pa->send_ok_msg_to_client(sess, NULL, 0, query_no_space);
+			run_query = false;
 			goto __run_query;
 		}
 

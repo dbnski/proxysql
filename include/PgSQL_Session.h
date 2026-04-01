@@ -556,6 +556,8 @@ public:
 	// this variable is relevant only if status == SETTING_VARIABLE
 	enum pgsql_variable_name changing_variable_idx;
 
+	bool servers_table_locked;
+
 	PgSQL_Session();
 	~PgSQL_Session();
 

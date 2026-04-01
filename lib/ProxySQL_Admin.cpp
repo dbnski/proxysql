@@ -1225,7 +1225,7 @@ void ProxySQL_Admin::flush_configdb() { // see #923
 	wrunlock();
 }
 
-bool ProxySQL_Admin::GenericRefreshStatistics(const char *query_no_space, unsigned int query_no_space_length, bool admin) {
+bool ProxySQL_Admin::GenericRefreshStatistics(const char *query_no_space, unsigned int query_no_space_length, bool admin, bool has_lock) {
 	bool ret=false;
 	bool refresh=false;
 	bool stats_mysql_processlist=false;
@@ -1748,17 +1748,25 @@ bool ProxySQL_Admin::GenericRefreshStatistics(const char *query_no_space, unsign
 			if (runtime_mysql_servers) {
 				int old_hostgroup_manager_verbose = mysql_thread___hostgroup_manager_verbose;
 				mysql_thread___hostgroup_manager_verbose = 0;
-				mysql_servers_wrlock();
+				if (!has_lock) {
+					mysql_servers_wrlock();
+				}
 				save_mysql_servers_runtime_to_database(true);
-				mysql_servers_wrunlock();
+				if (!has_lock) {
+					mysql_servers_wrunlock();
+				}
 				mysql_thread___hostgroup_manager_verbose = old_hostgroup_manager_verbose;
 			}
 			if (runtime_pgsql_servers) {
 				int old_hostgroup_manager_verbose = pgsql_thread___hostgroup_manager_verbose;
 				pgsql_thread___hostgroup_manager_verbose = 0;
-				pgsql_servers_wrlock();
+				if (!has_lock) {
+					pgsql_servers_wrlock();
+				}
 				save_pgsql_servers_runtime_to_database(true);
-				pgsql_servers_wrunlock();
+				if (!has_lock) {
+					pgsql_servers_wrunlock();
+				}
 				pgsql_thread___hostgroup_manager_verbose = old_hostgroup_manager_verbose;
 			}
 			if (runtime_proxysql_servers) {
@@ -2250,6 +2258,11 @@ void *child_mysql(void *arg) {
 	}
 
 __exit_child_mysql:
+	if (sess->servers_table_locked) {
+		GloAdmin->mysql_servers_wrunlock();
+		sess->servers_table_locked = false;
+	}
+
 	delete mysql_thr;
 
 	__sync_fetch_and_sub(&admin_client_threads_active, 1);
@@ -2987,6 +3000,16 @@ void ProxySQL_Admin::wrunlock() {
 	spin_wrunlock(&rwlock);
 #endif
 };
+
+#ifdef PA_PTHREAD_MUTEX
+bool ProxySQL_Admin::mysql_servers_trywrlock() {
+	int r = pthread_mutex_trylock(&mysql_servers_lock);
+	if (r == 0) {
+		return true;
+	}
+	return false;
+};
+#endif
 
 void ProxySQL_Admin::mysql_servers_wrlock() {
 	#ifdef PA_PTHREAD_MUTEX

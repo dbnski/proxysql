@@ -705,6 +705,8 @@ MySQL_Session::MySQL_Session() {
 	this->wait_timeout = mysql_thread___wait_timeout;
 	backend_closed_in_fast_forward = false;
 	fast_forward_grace_start_time = 0;
+
+	servers_table_locked = false;
 }
 
 /**

@@ -284,6 +284,8 @@ PgSQL_Session::PgSQL_Session() {
 	proxysql_node_address = NULL;
 	use_ldap_auth = false;
 	transaction_state_manager = new PgSQL_ExplicitTxnStateMgr(this);
+
+	servers_table_locked = false;
 }
 
 void PgSQL_Session::reset() {

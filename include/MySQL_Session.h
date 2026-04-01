@@ -507,6 +507,8 @@ class MySQL_Session: public Base_Session<MySQL_Session, MySQL_Data_Stream, MySQL
 	// this variable is relevant only if status == SETTING_VARIABLE
 	enum mysql_variable_name changing_variable_idx;
 
+	bool servers_table_locked;
+
 	MySQL_Session();
 	~MySQL_Session();
 

@@ -823,10 +823,13 @@ class ProxySQL_Admin {
 	ProxySQL_Restapi& proxysql_restapi();
 
 	void flush_error_log();
-	bool GenericRefreshStatistics(const char *query_no_space, unsigned int query_no_space_length, bool admin);
+	bool GenericRefreshStatistics(const char *query_no_space, unsigned int query_no_space_length, bool admin, bool has_lock);
 	SQLite3_result * generate_show_table_status(const char *, char **err);
 	SQLite3_result * generate_show_fields_from(const char *tablename, char **err);
 
+#ifdef PA_PTHREAD_MUTEX
+	bool mysql_servers_trywrlock();
+#endif
 	void mysql_servers_wrlock();
 	void mysql_servers_wrunlock();
 
